@@ -37,13 +37,17 @@ bool g_acc_top_axis_x = false; // 加速度センサのX軸が上向きか（重
 bool g_acc_top_axis_y = false; // 加速度センサのY軸が上向きか（重力加速度がかかる軸）のフラグ
 bool g_acc_top_axis_z = false; // 加速度センサのZ軸が上向きか（重力加速度がかかる軸）のフラグ
 
+float g_vel_x = 0.0;    // 速度 X軸
+float g_vel_y = 0.0;    // 速度 Y軸
+float g_vel_z = 0.0;    // 速度 Z軸
+unsigned long g_last_time = 0;
+
 static void get_acc_offset_remove_val(float *p_acc, float *p_offset);
 
 static void get_acc_offset_remove_val(float *p_acc, float *p_offset)
 {
     *p_acc = (*p_acc - (*p_offset / 10));
 }
-
 
 void kalman_filter_init(KalmanFilter *p_kf, float process_noise, float measurement_noise, float initial_value)
 {
@@ -135,6 +139,7 @@ void acc_calibrate(float *p_acc_x_offset, float *p_acc_y_offset, float *p_acc_z_
 void setup()
 {
     M5.begin();
+    g_last_time = millis();
 
     // LCD初期化
     M5.Lcd.setRotation(LCD_ROTATION_LANDSCAPE);
@@ -187,15 +192,38 @@ void loop()
     g_acc_y = kalman_filter_update(&g_kf_y, g_acc_y);
     g_acc_z = kalman_filter_update(&g_kf_z, g_acc_z);
 
+    // 速度に変換
+    unsigned long current_time = millis();
+    float dt = (current_time - g_last_time) / 1000.0f; // 秒単位に変換
+    g_last_time = current_time;
+
+    // ドリフト除去
+    float threshold = 0.05f;
+    float acc_x_clamp = (fabs(g_acc_x) < threshold) ? 0.0f : g_acc_x;
+    float acc_y_clamp = (fabs(g_acc_y) < threshold) ? 0.0f : g_acc_y;
+    float acc_z_clamp = (fabs(g_acc_z) < threshold) ? 0.0f : g_acc_z;
+
+    g_acc_x = acc_x_clamp;
+    g_acc_y = acc_y_clamp;
+    g_acc_z = acc_z_clamp;
+
+    // 単純積分（加速度 [m/s^2] × dt = 速度 [m/s]）
+    g_vel_x += g_acc_x * dt;
+    g_vel_y += g_acc_y * dt;
+    g_vel_z += g_acc_z * dt;
+
     // 表示
     sprite.fillSprite(TFT_BLACK);
     sprite.setCursor(0, 0);
-    sprite.printf("Acc X:%6.3f\n", g_acc_x);
-    sprite.printf("Acc Y:%6.3f\n", g_acc_y);
-    sprite.printf("Acc Z:%6.3f\n", g_acc_z);
-    sprite.printf("Acc X Ofs:%6.3f\n", g_acc_x_offset);
-    sprite.printf("Acc Y Ofs:%6.3f\n", g_acc_y_offset);
-    sprite.printf("Acc Z Ofs:%6.3f\n", g_acc_z_offset);
+    sprite.printf("Acc X:%6.3fm/s^2\n", g_acc_x);
+    sprite.printf("Acc Y:%6.3fm/s^2\n", g_acc_y);
+    sprite.printf("Acc Z:%6.3fm/s^2\n", g_acc_z);
+    // sprite.printf("Acc X Ofs:%6.3f\n", g_acc_x_offset);
+    // sprite.printf("Acc Y Ofs:%6.3f\n", g_acc_y_offset);
+    // sprite.printf("Acc Z Ofs:%6.3f\n", g_acc_z_offset);
+    sprite.printf("Vel X:%6.3fkm/h\n", g_vel_x);
+    sprite.printf("Vel Y:%6.3fkm/h\n", g_vel_y);
+    sprite.printf("Vel Z:%6.3fkm/h\n", g_vel_z);
     sprite.pushSprite(0, 0);
 
     delay(1000);
