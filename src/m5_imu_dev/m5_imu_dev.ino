@@ -1,9 +1,16 @@
-#include <M5Core2.h>
+#include <M5StickCPlus.h>
 #include <stdint.h>
 #include <math.h>
 
-#define ACCEL_OFFSET_AVG_CNT    1000
-#define ACCEL_AVG_NUM           1000
+#define LCD_HIGHT                        135
+#define LCD_WIDTH                        320
+#define LCD_ROTATION_PORTRAIT            0   // 縦向き（標準）
+#define LCD_ROTATION_LANDSCAPE           1   // 横向き（右回転）
+#define LCD_ROTATION_PORTRAIT_INV        2   // 縦向き（逆さま）
+#define LCD_ROTATION_LANDSCAPE_INV       3   // 横向き（左回転・逆横）
+
+#define ACCEL_OFFSET_AVG_CNT              100
+#define ACCEL_AVG_NUM                     100
 
 // LCDのスプライト
 TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);
@@ -43,10 +50,7 @@ void acc_calibrate(float *p_acc_x_offset, float *p_acc_y_offset, float *p_acc_z_
 
     sprite.fillSprite(TFT_BLACK);
     sprite.setCursor(0, 0);
-    sprite.println("[Accel Sensor Calibrate]");
-    sprite.println("1. Place the device on a flat surface!");
-    sprite.println("2. Don't touch the device!");
-    sprite.println("3. Wait until the LCD indicates the Finish");
+    sprite.println("[Acc Calibrate]");
 
     float sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
     float acc_x, acc_y, acc_z;
@@ -85,19 +89,20 @@ void acc_calibrate(float *p_acc_x_offset, float *p_acc_y_offset, float *p_acc_z_
     *p_acc_y_offset = (avg_y * 10);
     *p_acc_z_offset = (avg_z * 10);
 
-    sprite.printf("Accel X Offset: %6.3f\n", *p_acc_x_offset);
-    sprite.printf("Accel Y Offset: %6.3f\n", *p_acc_y_offset);
-    sprite.printf("Accel Z Offset: %6.3f\n", *p_acc_z_offset);
-    sprite.println("Calibrate Finish!");
+    sprite.printf("Acc X ofs:%6.3f\n", *p_acc_x_offset);
+    sprite.printf("Acc Y ofs:%6.3f\n", *p_acc_y_offset);
+    sprite.printf("Acc Z ofs:%6.3f\n", *p_acc_z_offset);
+    sprite.println("Finish");
     sprite.pushSprite(0, 0);
 }
 
 void setup()
 {
     M5.begin();
+    M5.Lcd.setRotation(LCD_ROTATION_LANDSCAPE);
     M5.IMU.Init();
 
-    sprite.createSprite(320, 240);
+    sprite.createSprite(LCD_WIDTH, LCD_HIGHT);
     sprite.setTextSize(2);
     sprite.setTextColor(TFT_WHITE, TFT_BLACK);
     sprite.fillSprite(TFT_BLACK);
@@ -113,6 +118,8 @@ void loop()
     uint32_t cnt;
     float sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
     float acc_x, acc_y, acc_z;
+
+    M5.update();
 
     // センサ値を複数回取得して合計
     for (cnt = 0; cnt < ACCEL_AVG_NUM; cnt++)
@@ -134,13 +141,12 @@ void loop()
     // 表示
     sprite.fillSprite(TFT_BLACK);
     sprite.setCursor(0, 0);
-    sprite.println("3-Axis Accel Develop");
-    sprite.printf("Accel X: %6.3f [m/s^2]\n", g_acc_x);
-    sprite.printf("Accel Y: %6.3f [m/s^2]\n", g_acc_y);
-    sprite.printf("Accel Z: %6.3f [m/s^2]\n", g_acc_z);
-    sprite.printf("Accel X Offset: %6.3f\n", g_acc_x_offset);
-    sprite.printf("Accel Y Offset: %6.3f\n", g_acc_y_offset);
-    sprite.printf("Accel Z Offset: %6.3f\n", g_acc_z_offset);
+    sprite.printf("Acc X:%6.3f\n", g_acc_x);
+    sprite.printf("Acc Y:%6.3f\n", g_acc_y);
+    sprite.printf("Acc Z:%6.3f\n", g_acc_z);
+    sprite.printf("Acc X Ofs:%6.3f\n", g_acc_x_offset);
+    sprite.printf("Acc Y Ofs:%6.3f\n", g_acc_y_offset);
+    sprite.printf("Acc Z Ofs:%6.3f\n", g_acc_z_offset);
     sprite.pushSprite(0, 0);
 
     delay(1000);
