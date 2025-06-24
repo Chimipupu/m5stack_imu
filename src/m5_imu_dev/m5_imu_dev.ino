@@ -6,21 +6,28 @@
 #define LCD_WIDTH                        320
 #define LCD_ROTATION_PORTRAIT            0   // 縦向き（標準）
 #define LCD_ROTATION_LANDSCAPE           1   // 横向き（右回転）
-#define LCD_ROTATION_PORTRAIT_INV        2   // 縦向き（逆さま）
-#define LCD_ROTATION_LANDSCAPE_INV       3   // 横向き（左回転・逆横）
+#define LCD_ROTATION_PORTRAIT_INV        2   // 縦向き逆さま
+#define LCD_ROTATION_LANDSCAPE_INV       3   // 横向き逆さま
 
 #define ACCEL_OFFSET_AVG_CNT              100
 #define ACCEL_AVG_NUM                     100
 
-// LCDのスプライト
-TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);
+#define ACC_GRABITY                       0.98 // 重力加速度の1/10
 
-// 重力加速度の1/10
-#define ACC_GRABITY    0.98
+typedef struct {
+    float q;   // プロセスノイズ共分散
+    float r;   // 観測ノイズ共分散
+    float x;   // 推定値
+    float p;   // 推定誤差共分散
+    float k;   // カルマンゲイン
+} KalmanFilter;
 
-float g_acc_x = 0.0;           // 加速度センサのX軸の加速度
-float g_acc_y = 0.0;           // 加速度センサのY軸の加速度
-float g_acc_z = 0.0;           // 加速度センサのZ軸の加速度
+KalmanFilter g_kf_x, g_kf_y, g_kf_z;        // カルマンフィルタの構造体
+TFT_eSprite sprite = TFT_eSprite(&M5.Lcd);  // LCDのスプライト
+
+float g_acc_x = 0.0;          // 加速度センサのX軸の加速度
+float g_acc_y = 0.0;          // 加速度センサのY軸の加速度
+float g_acc_z = 0.0;          // 加速度センサのZ軸の加速度
 
 float g_acc_x_offset = 0.0;   // 加速度センサのX軸のオフセット
 float g_acc_y_offset = 0.0;   // 加速度センサのY軸のオフセット
@@ -35,6 +42,35 @@ static void get_acc_offset_remove_val(float *p_acc, float *p_offset);
 static void get_acc_offset_remove_val(float *p_acc, float *p_offset)
 {
     *p_acc = (*p_acc - (*p_offset / 10));
+}
+
+
+void kalman_filter_init(KalmanFilter *p_kf, float process_noise, float measurement_noise, float initial_value)
+{
+    p_kf->q = process_noise;
+    p_kf->r = measurement_noise;
+    p_kf->x = initial_value;
+    p_kf->p = 1.0f;
+    p_kf->k = 0.0f;
+}
+
+float kalman_filter_update(KalmanFilter *p_kf, float measurement)
+{
+    // 予測ステップ
+    p_kf->p = p_kf->p + p_kf->q;
+
+    // 更新ステップ
+    p_kf->k = p_kf->p / (p_kf->p + p_kf->r);
+    p_kf->x = p_kf->x + p_kf->k * (measurement - p_kf->x);
+    p_kf->p = (1.0f - p_kf->k) * p_kf->p;
+
+    return p_kf->x;
+}
+
+void kalman_filter_reset(KalmanFilter *p_kf, float val)
+{
+    p_kf->x = val;
+    p_kf->p = 1.0f;
 }
 
 void acc_calibrate(float *p_acc_x_offset, float *p_acc_y_offset, float *p_acc_z_offset)
@@ -99,9 +135,9 @@ void acc_calibrate(float *p_acc_x_offset, float *p_acc_y_offset, float *p_acc_z_
 void setup()
 {
     M5.begin();
-    M5.Lcd.setRotation(LCD_ROTATION_LANDSCAPE);
-    M5.IMU.Init();
 
+    // LCD初期化
+    M5.Lcd.setRotation(LCD_ROTATION_LANDSCAPE);
     sprite.createSprite(LCD_WIDTH, LCD_HIGHT);
     sprite.setTextSize(2);
     sprite.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -109,7 +145,15 @@ void setup()
     sprite.setCursor(0, 0);
     sprite.pushSprite(0, 0);
 
+    // 加速度センサをキャリブレーション
+    M5.IMU.Init();
     acc_calibrate(&g_acc_x_offset, &g_acc_y_offset, &g_acc_z_offset);
+
+    // カルマンフィルタ初期化
+    kalman_filter_init(&g_kf_x, 0.01f, 0.1f, 0.0f);
+    kalman_filter_init(&g_kf_y, 0.01f, 0.1f, 0.0f);
+    kalman_filter_init(&g_kf_z, 0.01f, 0.1f, 0.0f);
+
     delay(3000);
 }
 
@@ -137,6 +181,11 @@ void loop()
     g_acc_x = (sum_x / ACCEL_AVG_NUM) * 10;
     g_acc_y = (sum_y / ACCEL_AVG_NUM) * 10;
     g_acc_z = (sum_z / ACCEL_AVG_NUM) * 10;
+
+    // カルマンフィルタで平滑化
+    g_acc_x = kalman_filter_update(&g_kf_x, g_acc_x);
+    g_acc_y = kalman_filter_update(&g_kf_y, g_acc_y);
+    g_acc_z = kalman_filter_update(&g_kf_z, g_acc_z);
 
     // 表示
     sprite.fillSprite(TFT_BLACK);
